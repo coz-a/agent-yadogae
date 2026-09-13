@@ -7,6 +7,10 @@ behaviour.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-13
+
+Documentation only; the tool behaves exactly as in 0.1.0.
+
 ### Added
 
 - This changelog.
@@ -14,6 +18,8 @@ behaviour.
 - README: a quick start with a sample session, running it without installing (`uvx`, or piped straight
   from GitHub), uninstalling, where backups are kept and how to find them, and the environment
   variables it honours.
+- The source distribution now includes `README.ja.md` and `CHANGELOG.md`, and the PyPI page links to
+  the changelog.
 
 ### Changed
 
@@ -51,5 +57,6 @@ First release.
   check.
 - Python 3.8 or later, no dependencies, a single module.
 
-[Unreleased]: https://github.com/coz-a/agent-yadogae/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/coz-a/agent-yadogae/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/coz-a/agent-yadogae/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/coz-a/agent-yadogae/releases/tag/v0.1.0

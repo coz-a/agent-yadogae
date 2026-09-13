@@ -64,7 +64,7 @@ try:
 except ImportError:  # Python < 3.11: config.toml is still rewritten, just not re-parsed
     tomllib = None
 
-__version__ = "0.1.0"  # read by the build backend
+__version__ = "0.1.1"  # read by the build backend
 VERSION = __version__
 
 
