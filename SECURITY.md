@@ -1,12 +1,10 @@
 # Security policy
 
-agent-yadogae rewrites files that belong to coding agents in your home
-directory, so a flaw in it can damage or expose conversation history and
-settings.
+agent-yadogae rewrites files that belong to coding agents in your home directory, so a flaw in it can
+damage or expose conversation history and settings. It makes no network connections.
 
-Please report a vulnerability privately through GitHub: open the repository's
-**Security** tab and choose **Report a vulnerability**. Do not open a public
-issue for it. Commits are made from a GitHub noreply address, so there is no
-email address to write to.
+Please report a vulnerability privately through
+[GitHub private vulnerability reporting](https://github.com/coz-a/agent-yadogae/security/advisories/new),
+not in a public issue.
 
 Only the latest release receives fixes.

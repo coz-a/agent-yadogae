@@ -11,10 +11,15 @@ behaviour.
 
 - This changelog.
 - A Japanese README, `README.ja.md`.
+- README: a quick start with a sample session, running it without installing (`uvx`, or piped straight
+  from GitHub), uninstalling, where backups are kept and how to find them, and the environment
+  variables it honours.
 
 ### Changed
 
 - The README is now in English.
+- README: the list of refusals now matches the checks the tool makes, and the descriptions of undo,
+  backups and file writes say exactly what they cover.
 - Publishing to PyPI now waits for approval through the `pypi` GitHub environment.
 
 ## [0.1.0] - 2026-09-13
@@ -31,16 +36,17 @@ First release.
     and `[projects."<path>"]` in `config.toml`.
   - agy: `cache/last_conversations.json`, `trustedWorkspaces` in `settings.json`, and `history.jsonl`.
 - Sessions started in a subdirectory of the project, Claude Code worktrees included, move with it.
-- Every refusal happens before the first change, among them: a Claude Code history folder name shared
-  with another project, a merge with conflicting files, a symbolic link as the source, a destination
-  inside the source, a source containing the home directory or agent data, a move across filesystems,
-  and any platform other than Linux.
-- Stops with exit code 2 while a Claude Code, Codex or agy session is running in the project.
+- Checks that run before any change and refuse, among others: a symbolic link as source or destination,
+  one side inside the other, either side containing the home directory or agent data, a move across
+  filesystems, a merge with conflicting files, a Claude Code history folder name shared with another
+  project, and any platform other than Linux.
+- Stops with exit code 2 while a Claude Code, Codex or agy session is running under the source or the
+  destination.
 - Asks for confirmation after showing the plan when run from a terminal; `--yes` skips it and is
   required otherwise. `--dry-run` prints the plan only.
 - Backs up the config, history and SQLite files it edits, never with a wider mode than the original.
-- A failed step exits with code 1 and says how to finish with `--state-only`; running the tool in the
-  other direction undoes a move.
+- A failed step exits with code 1 and says how to finish with `--state-only`; a move into a new
+  destination can be reversed by running the tool in the other direction.
 - `--merge` folds the project into an existing destination; `--ignore-running` skips the running-session
   check.
 - Python 3.8 or later, no dependencies, a single module.
