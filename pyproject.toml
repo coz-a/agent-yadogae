@@ -28,9 +28,10 @@ classifiers = [
 [project.urls]
 Homepage = "https://github.com/coz-a/agent-yadogae"
 Issues = "https://github.com/coz-a/agent-yadogae/issues"
+Changelog = "https://github.com/coz-a/agent-yadogae/blob/main/CHANGELOG.md"
 
 [project.scripts]
 agent-yadogae = "agent_yadogae:main"
 
 [tool.flit.sdist]
-include = ["test/", "SECURITY.md"]
+include = ["test/", "SECURITY.md", "README.ja.md", "CHANGELOG.md"]

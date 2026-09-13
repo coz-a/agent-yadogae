@@ -1,169 +1,188 @@
+English | [日本語](https://github.com/coz-a/agent-yadogae/blob/main/README.ja.md)
+
 # agent-yadogae
 
-エージェントの宿替え — プロジェクトフォルダを移動し、**コーディングエージェントがそのプロジェクトについて溜めた記録を連れていく**。
+Move a project directory and **take everything your coding agents remember about it along**.
 
-> **非公式ツールです。** Anthropic・OpenAI・Google とは関係がありません。Claude Code・Codex・Antigravity
-> がそれぞれ内部で使っている、公開も保証もされていない保存形式に依存しており、エージェントの更新で
-> 動かなくなることがあります。MIT ライセンスのもと無保証で提供します。Claude Code・Codex・Antigravity
-> は各社の商標です。
+> **This is an unofficial tool**, not affiliated with Anthropic, OpenAI or Google. It relies on the
+> undocumented, unguaranteed storage formats that Claude Code, Codex and Antigravity use internally,
+> and an agent update can break it. It is provided under the MIT license with no warranty.
+> Claude Code, Codex and Antigravity are trademarks of their respective owners.
 
 ```bash
 agent-yadogae ~/workspace/oldname ~/workspace/newname
 ```
 
-## インストール
+## Install
 
-依存なしの Python 3.8 以上、Linux のみです。
+Python 3.8 or later, no dependencies, Linux only.
 
 ```bash
-pipx install agent-yadogae        # または: uv tool install agent-yadogae
+pipx install agent-yadogae        # or: uv tool install agent-yadogae
 ```
 
-単一ファイルなので、そのまま置いても動きます。
+It is a single file, so dropping it on your `PATH` works too.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/coz-a/agent-yadogae/main/agent_yadogae.py \
   -o ~/.local/bin/agent-yadogae && chmod +x ~/.local/bin/agent-yadogae
 ```
 
-## 対応状況
+## Supported agents
 
-| エージェント | 検証したバージョン | `mv` だけだと |
+| Agent | Verified versions | After a plain `mv` |
 |---|---|---|
-| Claude Code | 2.1.268〜2.1.270 | `claude --continue` と `/resume` の一覧に出ない |
-| Codex CLI | 0.153.4 | `codex resume` の一覧と `--last` に出ない |
-| Antigravity CLI (`agy`) | 1.2.2 | `agy -c` が前の会話を引けない |
+| Claude Code | 2.1.268–2.1.270 | `claude --continue` and the `/resume` list no longer show the sessions |
+| Codex CLI | 0.153.4 | `codex resume` and `--last` no longer show them |
+| Antigravity CLI (`agy`) | 1.2.2 | `agy -c` no longer finds the previous conversation |
 
-Linux でのみ検証しています。macOS と Windows では何も変更せずに終了します。Gemini CLI は対象外です。
+Verified on Linux only. On macOS and Windows it exits without changing anything. Gemini CLI is not
+supported.
 
-## なぜ要るのか
+## Why you need it
 
-3つのエージェントはどれも、会話を**実行したディレクトリの絶対パス**で索引しています。たとえば
-Claude Code はパスの英数字以外をすべて `-` に置換した名前のフォルダを `~/.claude/projects/` に作り、
-transcript も自動メモリもそこに入れます（200文字を超える名前は切り詰めてハッシュを付けます）。
+All three agents index conversations by the **absolute path of the directory they ran in**. Claude
+Code, for example, replaces every non-alphanumeric character in the path with `-` and uses the result
+as a folder name under `~/.claude/projects/`, where the transcripts and the auto-memory live (names
+longer than 200 characters are truncated and given a hash suffix).
 
 ```
 /home/you/workspace/oldname
   → ~/.claude/projects/-home-you-workspace-oldname/
 ```
 
-フォルダ名を変えると索引キーが変わるので、どのエージェントも過去の会話を見つけられなくなります。
-**データは消えません。古いキーの下に取り残される**だけです。`mv` は何も言わずにこれをやります。
+Rename the directory and the index key changes, so none of the agents can find the old conversations.
+**Nothing is deleted — it is left behind under the old key.** `mv` does this without a word.
 
-## 何を運ぶか
+## What it carries
 
-各エージェントの resume が実際に読んでいる記録を書き換えます。
+It rewrites the records each agent's resume actually reads.
 
-| | 中身 |
+| | What it is |
 |---|---|
-| `~/.claude/projects/<encoded>/` | transcript、サブエージェントのログ、tool-results、`memory/`（自動メモリ） |
-| `~/.claude.json` の `projects[パス]` | 信頼ダイアログの承認、`allowedTools`、MCP 設定 |
-| `~/.claude/history.jsonl` の `"project"` | プロンプト履歴 |
-| `~/.codex/sessions/**/rollout-*.jsonl` の `cwd` | **`codex resume` の絞り込みが見ているのはここ** |
-| `~/.codex/state_<n>.sqlite` の `threads.cwd`, `project_roots.path` | スレッド索引 |
-| `~/.codex/config.toml` の `[projects."<パス>"]` | 信頼設定 |
-| `~/.gemini/antigravity-cli/cache/last_conversations.json` | パス → 会話 ID。**`agy -c` が見ているのはここ** |
-| `~/.gemini/antigravity-cli/settings.json` の `trustedWorkspaces` | 信頼済みワークスペース |
-| `~/.gemini/antigravity-cli/history.jsonl` の `"workspace"` | プロンプト履歴 |
+| `~/.claude/projects/<encoded>/` | transcripts, subagent logs, tool results, `memory/` (auto-memory) |
+| `projects[path]` in `~/.claude.json` | trust-dialog acceptance, `allowedTools`, MCP settings |
+| `"project"` in `~/.claude/history.jsonl` | prompt history |
+| `cwd` in `~/.codex/sessions/**/rollout-*.jsonl` | **what the `codex resume` filter looks at** |
+| `threads.cwd`, `project_roots.path` in `~/.codex/state_<n>.sqlite` | thread index |
+| `[projects."<path>"]` in `~/.codex/config.toml` | trust settings |
+| `~/.gemini/antigravity-cli/cache/last_conversations.json` | path → conversation ID, **what `agy -c` looks at** |
+| `trustedWorkspaces` in `~/.gemini/antigravity-cli/settings.json` | trusted workspaces |
+| `"workspace"` in `~/.gemini/antigravity-cli/history.jsonl` | prompt history |
 
-プロジェクトの**サブディレクトリで始めたセッションも一緒に移ります**。Claude Code の worktree
-（`.claude/worktrees/…`）の履歴フォルダも含め、`SRC/sub` は `DST/sub` になります。
+**Sessions started in a subdirectory of the project move with it** — Claude Code worktree history
+folders (`.claude/worktrees/…`) included: `SRC/sub` becomes `DST/sub`.
 
-Codex は SQLite の `threads.cwd` を直すだけでは戻らず、rollout 側の `cwd` まで書き換えて初めて
-移動先の `codex resume` がセッションを拾うことを確認しています。agy は `last_conversations.json`
-のキーを付け替えれば `agy -c` が会話を復元します。
+For Codex, fixing `threads.cwd` in SQLite is not enough: `codex resume` in the new location only picks
+the session up once the `cwd` inside the rollout files is rewritten too. This was verified. For agy,
+rekeying `last_conversations.json` is enough for `agy -c` to restore the conversation.
 
-## 使い方
+## Usage
 
 ```
 agent-yadogae SRC DST [-n] [-y] [--state-only] [--merge] [--ignore-running] [-q]
 
-  -n, --dry-run       計画だけ表示して何も変更しない
-  -y, --yes           確認せずに実行する（端末以外から使うときは必須）
-      --state-only    フォルダは移動済み。エージェントの記録だけ運ぶ
-      --merge         既に存在する DST へプロジェクトを合流させる
-      --ignore-running  エージェントが動いていても実行する
-  -q, --quiet         問題だけ報告する
+  -n, --dry-run       print the plan and change nothing
+  -y, --yes           do not ask for confirmation (required when not run from a terminal)
+      --state-only    the directory is already moved; carry the agent records only
+      --merge         fold the project into a DST that already exists
+      --ignore-running  migrate even while an agent session is running there
+  -q, --quiet         only report problems
 ```
 
-終了コードは、成功が 0、拒否・中止・途中の失敗が 1、エージェントが稼働中で止まったときが 2 です。
+Exit codes: 0 on success, 1 when refused, cancelled or a step failed, 2 when an agent session is still
+running.
 
-端末から実行すると、まず計画を表示してから `[y/N]` で確認します。
+Run from a terminal, it prints the plan first and asks `[y/N]`.
 
-## 安全のための振る舞い
+## Safety
 
-**変更を始める前に全部検査し、ひとつでも引っかかれば何も変えずに終了します。**
+**Everything is checked before the first change. If any check fails, it exits without changing
+anything.** It refuses when:
 
-- 運ぶ Claude Code 履歴フォルダの名前を、**移動に含まれない別のプロジェクト**も使っているとき（`/w/a_b` と `/w/a-b` は同じ名前になり、`memory/` も共有されます）。transcript が残っていない場合は、Claude Code 自身の記録（`~/.claude.json` とプロンプト履歴）で見分け、記録が読めなければ拒否します
-- DST の Claude Code 履歴フォルダ名が別のプロジェクトのものと重なるとき
-- 合流する両側に、内容の違う同名ファイルがあるとき（`memory/MEMORY.md` など）
-- SRC がシンボリックリンク、DST が SRC の中、SRC がホームディレクトリやエージェントのデータを含むとき
-- SRC と DST が**別のファイルシステム**にあるとき（移動がコピーと削除になり、途中で止まると戻せないため）
-- DST が既にある（`--merge` なし）、DST の親ディレクトリが無い
-- Linux 以外
+- a Claude Code history folder it would carry is **also used by another project that is not part of
+  the move** (`/w/a_b` and `/w/a-b` map to the same folder and share its `memory/`). When no transcript
+  is left in the folder, Claude Code's own records (`~/.claude.json` and the prompt history) decide,
+  and a record that cannot be read is a refusal
+- the Claude Code history folder name for DST already belongs to another project
+- both sides of a merge contain a file with the same name but different content (`memory/MEMORY.md`,
+  for example)
+- SRC is a symbolic link, DST is inside SRC, or SRC contains the home directory or agent data
+- SRC and DST are on **different filesystems** (the move would become a copy and a delete that cannot
+  be undone halfway)
+- DST already exists (without `--merge`), or DST's parent directory does not exist
+- the platform is not Linux
 
-**そのプロジェクトで Claude Code・Codex・agy を閉じてから実行してください。** 開いたまま動かすと、
-セッションが古い索引に書き足し続けて、その分が失われます。Claude Code は `~/.claude/sessions/*.json`
-の `cwd` と生存 PID を突き合わせ、Codex と agy は `/proc` から作業ディレクトリが SRC か DST の下にある
-`codex` / `agy` プロセスを探し、見つかれば終了コード 2 で止まります。
+**Close Claude Code, Codex and agy in the project before running it.** A session left open keeps
+appending to the old index, and whatever it writes afterwards is lost. Claude Code sessions are found
+by matching the `cwd` in `~/.claude/sessions/*.json` against live PIDs; Codex and agy by looking in
+`/proc` for `codex` / `agy` processes whose working directory is under SRC or DST. If one is found, it
+stops with exit code 2.
 
-設定・履歴ファイルと Codex の SQLite は、触る前に `*.agent-yadogae-<timestamp>` としてバックアップします。
-バックアップは作成の瞬間から所有者だけが読める状態で作り、元のファイルより広い権限にはしません。
-ファイルは一時ファイルに書いてから置き換えるので、途中の状態が読まれることはありません。
+Config and history files and Codex's SQLite database are backed up as `*.agent-yadogae-<timestamp>`
+before they are touched. Backups are readable by the owner only from the moment they are created, and
+never get a wider mode than the original. Files are written to a temporary file and renamed into place,
+so nothing ever reads a half-written file.
 
-**途中で失敗したとき**は終了コード 1 で、何が失敗したかと次の手を表示します。プロジェクト本体の移動が
-済んでいれば、原因を直して `agent-yadogae SRC DST --state-only` を再実行すると残りを運びます
-（済んだ部分には何もしません）。
+**If a step fails partway**, it exits with code 1 and says what failed and what to do next. If the
+project directory itself has already moved, fix the cause and run `agent-yadogae SRC DST --state-only`
+to carry the rest (steps that already completed are left as they are).
 
-**元に戻すには逆向きに実行します。** `agent-yadogae DST SRC` で、運んだ記録はすべて移動前と同じ内容に
-戻ります（テストで往復後のバイト一致を確認しています）。Codex の rollout は数百MBになり得るので
-バックアップしませんが、この往復で戻せます。
+**To undo, run it the other way round.** `agent-yadogae DST SRC` restores every carried record to its
+state before the move (the tests check that a round trip is byte-identical). Codex rollouts, which can
+run to hundreds of megabytes, are not backed up, but this round trip restores them.
 
-## やらないこと
+## What it does not do
 
-**Claude Code の transcript の各行に埋め込まれた `"cwd"` は書き換えません。** 古いパスのまま残しても
-`--continue` も `--resume` も正しく動くことを確認した上での判断です。直そうとすると数十MBの JSONL を
-全部書き換えることになり、得るものがありません。
+**It does not rewrite the `"cwd"` recorded on every line of a Claude Code transcript.** Leaving the old
+path there was verified to be harmless — `--continue` and `--resume` both work — and fixing it would
+mean rewriting tens of megabytes of JSONL for no gain.
 
-その代わり、運んだ履歴フォルダには `.agent-yadogae.json` を置き、そのフォルダが今どのパスのものかを
-記録します。これが無いと、次に実行したとき「transcript の `cwd` とフォルダ名が合わない」ことを
-パス変換規則の変化と見分けられません。逆向きに戻したときなど、フォルダの transcript 自身がそのパスを
-申告していれば、`agent-yadogae` はこのファイルを置かない（あれば消す）ようにしています。
+Instead, a carried history folder gets a `.agent-yadogae.json` recording which path it now belongs to.
+Without it, the next run could not tell "the transcript `cwd` does not match the folder name" apart
+from a change in the path-encoding rule. When the folder's own transcripts already declare that path —
+after moving back, for example — `agent-yadogae` does not write the file (and removes it if present).
 
-なお `claude --resume <session-id>` はプロジェクトに関係なく使えるので、移行しなくてもセッション ID
-さえ分かればどこからでも復元できます。壊れるのは一覧のほうだけです。
+Note that `claude --resume <session-id>` works regardless of the project, so with the session ID you
+can restore a session from anywhere even without migrating. Only the listings break.
 
-## パス変換をなぜ検証するのか
+## Why the path encoding is verified
 
-Claude Code のパス → フォルダ名の変換は Claude Code 本体から取り出した実装をそのまま移植しています
-（UTF-16 単位で置換するので、絵文字は `-` 2つになります）。それでも移動先の名前は計算するしかないので、
-実行前に**このマシン上の全プロジェクトで規則が再現するかを検算**し、合わなければ何もせず終了します。
-Claude Code の更新で規則が変わった場合に、黙って間違ったフォルダを作らないためです。
+The path → folder name conversion is a direct port of the implementation extracted from Claude Code
+itself (it replaces UTF-16 code units, so an emoji becomes two `-`). The destination name still has to
+be computed, though, so before doing anything it **checks that the rule reproduces every project folder
+on this machine**, and exits without changes if it does not. That way a change of rule in a Claude Code
+update cannot silently produce a wrong folder.
 
-検算は「そのフォルダが申告する `cwd`（と `.agent-yadogae.json`）のうち少なくとも1つが自分の名前に
-符号化されるか」で判定します。1つ目だけを見てはいけません — プロジェクト直下で始まって git worktree に
-入ったセッションは `cwd` を2つ記録し、索引は worktree 側に付くからです。
+A folder passes the check when at least one of the `cwd`s it declares (plus `.agent-yadogae.json`)
+encodes to its own name. Looking only at the first one is wrong: a session that starts in the project
+root and then enters a git worktree records two `cwd`s, and is filed under the worktree's name.
 
-## 名前について
+## About the name
 
-宿替え＝住まいを替えること。替えるのは**エージェントの宿**で、そこに置いてある持ち物（会話の記録、
-自動メモリ、そのプロジェクト用の設定）は当然ついてきます。`mv` との違いがそのまま名前になっています。
+*Yadogae* (宿替え) means moving house. What moves here is the **agents' lodging**, and the belongings
+kept there — conversation history, auto-memory, per-project settings — naturally come along. The
+difference from `mv` is the name.
 
-## テスト
+## Tests
 
 ```bash
 python3 -m unittest discover -s test -v
 ```
 
-使い捨ての `HOME`・`CLAUDE_CONFIG_DIR`・`CODEX_HOME` と偽の `/proc` だけを使い、実際のエージェントの
-データには触れず、API も呼びません。`node` があれば、Claude Code から取り出したパス変換関数を node で
-実行し、移植版と結果が一致することも確かめます。
+They use only a throwaway `HOME`, `CLAUDE_CONFIG_DIR` and `CODEX_HOME` and a fake `/proc`; they never
+touch real agent data and never call an API. If `node` is available, they also run the path encoding
+function extracted from Claude Code under node and check that the port gives the same results.
 
-実環境での end-to-end 確認は 2026-09-13 に実施しています。目印のトークンを含むセッションを作り、
-移動後に移動先で本物の `claude --continue`・`codex exec resume --last`・`agy -c` がトークンを復元する
-ことを確認しました。Codex は `mv` だけでも、SQLite の `threads.cwd` を直すだけでも復元できず、rollout の
-`cwd` まで直すと復元しました。
+End-to-end verification with the real agents was done on 2026-09-13: sessions containing a marker token
+were created, moved, and then real `claude --continue`, `codex exec resume --last` and `agy -c` in the
+new location restored the token. Codex restored nothing after a plain `mv`, nor after fixing only
+`threads.cwd` in SQLite; it did once the `cwd` in the rollouts was fixed as well.
 
-## ライセンス
+## Changelog
 
-MIT。[LICENSE](LICENSE) を参照してください。
+See [CHANGELOG.md](https://github.com/coz-a/agent-yadogae/blob/main/CHANGELOG.md).
+
+## License
+
+MIT. See [LICENSE](https://github.com/coz-a/agent-yadogae/blob/main/LICENSE).
