@@ -1,0 +1,36 @@
+[build-system]
+# flit-core rather than setuptools: setuptools learned `license = "MIT"`
+# (PEP 639) only in releases that no longer install on Python 3.8.
+requires = ["flit_core>=4,<5"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "agent-yadogae"
+dynamic = ["version"]
+description = "Move a project directory and take its Claude Code, Codex and Antigravity CLI history with it."
+readme = "README.md"
+requires-python = ">=3.8"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "coz-a" }]
+keywords = ["claude-code", "codex", "antigravity", "coding-agent", "cli"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Software Development",
+    "Topic :: Utilities",
+]
+
+[project.urls]
+Homepage = "https://github.com/coz-a/agent-yadogae"
+Issues = "https://github.com/coz-a/agent-yadogae/issues"
+
+[project.scripts]
+agent-yadogae = "agent_yadogae:main"
+
+[tool.flit.sdist]
+include = ["test/", "SECURITY.md"]

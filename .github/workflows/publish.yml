@@ -1,0 +1,51 @@
+name: publish
+
+# Publishes to PyPI through Trusted Publishing: no API token exists anywhere.
+# Register this repository and this workflow file (publish.yml) as a trusted
+# publisher on PyPI before the first release.
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: The release tag must match VERSION
+        run: test "${GITHUB_REF_NAME#v}" = "$(python -c 'import agent_yadogae; print(agent_yadogae.VERSION)')"
+      - name: Test, build and check
+        run: |
+          python -m unittest discover -s test
+          python -m pip install build twine
+          python -m build
+          python -m twine check --strict dist/*
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dist
+          path: dist/
+
+  pypi:
+    needs: build
+    runs-on: ubuntu-latest
+    # Once the repository is public, create an environment named "pypi" with
+    # required reviewers, name it in the PyPI trusted publisher, and uncomment
+    # this line. GitHub Free offers no environments on private repositories.
+    # environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
