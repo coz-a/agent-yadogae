@@ -408,6 +408,51 @@ class TestClaudeIndexes(Fixture):
         self.assertTrue(src.is_dir())
         self.assertTrue(folder.is_dir())
 
+    def add_recorded_project(self, path: str) -> None:
+        data = json.loads(self.config.read_text(encoding="utf-8"))
+        data["projects"][path] = {}
+        self.config.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    def test_a_folder_another_recorded_project_also_uses_is_refused(self):
+        """Regression: the other project's transcripts had been pruned, so only
+        the memory/ the two share was left -- and it went with this move."""
+        self.add_recorded_project(str(self.root / "work.oldname"))  # same folder name as src
+        self.assertEqual(self.run_cli(), 1)
+        self.assertIn("not part of this move", self.err)
+        self.assertTrue(self.src.is_dir())
+        self.assertTrue((self.index / "memory" / "MEMORY.md").is_file())
+
+    def test_a_subdirectory_folder_another_recorded_project_also_uses_is_refused(self):
+        inner = str(self.src / "x")
+        folder = self.projects / ay.encode(inner)
+        write_session(folder, inner, "IN")
+        self.add_recorded_project(str(self.root / "work" / "oldname-x"))  # same folder name as src/x
+        self.assertEqual(self.run_cli(), 1)
+        self.assertIn("not part of this move", self.err)
+        self.assertTrue(folder.is_dir())
+
+    def test_an_unreadable_claude_config_is_refused_not_ignored(self):
+        self.config.write_text("{not json", encoding="utf-8")
+        self.assertEqual(self.run_cli(), 1)
+        self.assertIn("tell projects apart", self.err)
+        self.assertTrue(self.src.is_dir())
+
+    def test_a_folder_with_no_transcripts_needs_claude_codes_record_of_the_project(self):
+        for f in self.index.glob("*.jsonl"):
+            f.unlink()
+        self.config.write_text(json.dumps({"projects": {}}, indent=2), encoding="utf-8")
+        self.history.write_text("", encoding="utf-8")
+        self.assertEqual(self.run_cli(), 1)
+        self.assertIn("no record", self.err)
+        self.assertTrue(self.index.is_dir())
+
+    def test_a_subdirectory_folder_with_no_transcripts_is_reported_as_left_behind(self):
+        folder = self.projects / ay.encode(str(self.src / "sub"))
+        (folder / "memory").mkdir(parents=True)
+        self.assertEqual(self.run_cli(argv=[str(self.src), str(self.dst), "--yes"]), 0, self.err)
+        self.assertIn(f"left {folder.name} where it is", self.out)
+        self.assertTrue(folder.is_dir())
+
     def test_an_existing_settings_entry_at_the_destination_is_kept(self):
         data = json.loads(self.config.read_text(encoding="utf-8"))
         data["projects"][str(self.dst)] = {"allowedTools": []}

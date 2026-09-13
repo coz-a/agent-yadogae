@@ -288,43 +288,56 @@ def merge_into(src: Path, dst: Path, ignore: frozenset[str] = frozenset()) -> No
 
 
 def known_project_paths(home: Path) -> set[str]:
-    """Every project path Claude Code has recorded, from ~/.claude.json and the prompt history."""
+    """Every project path Claude Code has recorded, from ~/.claude.json and the prompt history.
+
+    These records are what tells two projects with the same folder name apart,
+    so a record that exists but cannot be read is a refusal, never an empty
+    answer that would wave everything through.
+    """
     paths: set[str] = set()
-    try:
-        data = json.loads(config_path(home).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        data = None
-    projects = data.get("projects") if isinstance(data, dict) else None
-    if isinstance(projects, dict):
-        paths.update(k for k in projects if isinstance(k, str))
-    try:
-        with (home / "history.jsonl").open(encoding="utf-8") as fh:
-            for line in fh:
-                if '"project"' not in line:
-                    continue
-                try:
-                    entry = json.loads(line)
-                except ValueError:
-                    continue
-                project = entry.get("project") if isinstance(entry, dict) else None
-                if isinstance(project, str):
-                    paths.add(project)
-    except (OSError, UnicodeDecodeError):
-        pass
+    config = config_path(home)
+    if config.exists():
+        try:
+            data = json.loads(config.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise Refused(f"cannot read {config} ({exc}); it is needed to tell projects apart")
+        projects = data.get("projects") if isinstance(data, dict) else None
+        if isinstance(projects, dict):
+            paths.update(k for k in projects if isinstance(k, str))
+    history = home / "history.jsonl"
+    if history.exists():
+        try:
+            with history.open(encoding="utf-8", errors="replace") as fh:
+                for line in fh:
+                    if '"project"' not in line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                    except ValueError:
+                        continue
+                    project = entry.get("project") if isinstance(entry, dict) else None
+                    if isinstance(project, str):
+                        paths.add(project)
+        except OSError as exc:
+            raise Refused(f"cannot read {history} ({exc}); it is needed to tell projects apart")
     return paths
 
 
-def plan_claude_indexes(projects: Path, src: str, dst: str, known: set[str]) -> list[tuple[Path, Path, str]]:
-    """(index dir, target dir, new path) for the project and its subdirectories.
+def plan_claude_indexes(
+    projects: Path, src: str, dst: str, known: set[str]
+) -> tuple[list[tuple[Path, Path, str]], list[str]]:
+    """The folders to carry as (index dir, target dir, new path), and the names left behind.
 
     Folder names are lossy, so a folder is only taken when what it says about
-    itself puts it under src, and a target is only used when nothing says it
-    belongs elsewhere. Anything ambiguous raises Refused: one project's
-    history must never be carried off with, or folded into, another's.
+    itself puts it under src and no other project Claude Code has recorded
+    uses the same name, and a target is only used when nothing says it belongs
+    elsewhere. Anything ambiguous raises Refused: one project's history -- its
+    shared memory/ included -- must never be carried off with, or folded into,
+    another's.
     """
     if not projects.is_dir():
-        return []
-    moves = []
+        return [], []
+    moves, left = [], []
     for d in sorted(projects.iterdir()):
         if not d.is_dir():
             continue
@@ -338,17 +351,28 @@ def plan_claude_indexes(projects: Path, src: str, dst: str, known: set[str]) -> 
             )
         if not owners and d.name == encode(src):
             # No transcript left to vouch (Claude Code prunes old ones, memory/
-            # stays), so the name is the only link -- usable only while no
-            # other project Claude Code knows of maps to it as well.
-            rivals = sorted(p for p in known if p != src and encode(p) == d.name)
-            if rivals:
+            # stays), so the name is the only link. Take it only on Claude
+            # Code's own record of src.
+            if src not in known:
                 raise Refused(
-                    f"the Claude Code history folder {d.name} has no transcript saying whether it "
-                    f"belongs to {src} or {rivals[0]}; move it by hand"
+                    f"the Claude Code history folder {d.name} has no transcript left, and Claude Code "
+                    f"has no record of {src} to tie it to; move it by hand"
                 )
             inside = [src]
         if not inside:
+            if not owners and d.name.startswith(encode(src) + "-"):
+                left.append(d.name)
             continue
+        rivals = sorted(
+            p for p in known
+            if encode(p) == d.name and not is_within(p, src) and not is_within(p, dst)
+        )
+        if rivals:
+            raise Refused(
+                f"the Claude Code history folder {d.name} is also the one Claude Code uses for "
+                f"{rivals[0]}, which is not part of this move; what the two share (memory/ included) "
+                "cannot be split, so sort it out by hand first"
+            )
         old = src if src in inside else inside[0]
         new = dst + old[len(src):]  # every inside path is src or below it
         moves.append((d, projects / encode(new), new))
@@ -389,7 +413,7 @@ def plan_claude_indexes(projects: Path, src: str, dst: str, known: set[str]) -> 
             f"the Claude Code history folder {target.name} for {new} already exists and nothing "
             "in it says which project it belongs to; move it aside first"
         )
-    return moves
+    return moves, left
 
 
 def live_sessions(sessions_dir: Path, roots: list[str]) -> list[dict]:
@@ -614,12 +638,16 @@ def rewrite_jsonl_field(r: Runner, history: Path, field: str, src: str, dst: str
         write_atomic(history, "".join(out))
 
 
-def carry_claude(r: Runner, home: Path, moves: list[tuple[Path, Path, str]], src: str, dst: str) -> None:
+def carry_claude(
+    r: Runner, home: Path, moves: list[tuple[Path, Path, str]], left: list[str], src: str, dst: str
+) -> None:
     r.say("== Claude Code")
     if not moves:
         r.say(f"  no history folder for {src}")
     for index, target, new in moves:
         r.step(f"Claude Code history folder {index.name}", carry_index, index, target, new)
+    for name in left:
+        r.say(f"  left {name} where it is: it has no transcript saying which project it belongs to")
     r.step("~/.claude.json", rekey_config, config_path(home), src, dst)
     r.step("~/.claude/history.jsonl", rewrite_jsonl_field, home / "history.jsonl", "project", src, dst)
 
@@ -960,7 +988,7 @@ class Plan:
                 lines += [f"    declares cwd {c} -> {encode(c)}" for c in cwds[:3]]
             lines.append("refusing to guess the destination name; migrate by hand")
             raise Refused("\n".join(lines))
-        self.index_moves = plan_claude_indexes(projects, src, dst, known_project_paths(self.home))
+        self.index_moves, self.left_behind = plan_claude_indexes(projects, src, dst, known_project_paths(self.home))
 
     def execute(self, r: Runner) -> None:
         if not self.state_only:
@@ -975,7 +1003,7 @@ class Plan:
                 r.problem(f"moving the project: {exc}")
                 return
         r.project_moved = True
-        carry_claude(r, self.home, self.index_moves, self.src, self.dst)
+        carry_claude(r, self.home, self.index_moves, self.left_behind, self.src, self.dst)
         carry_codex(r, self.codex, self.src, self.dst)
         carry_antigravity(r, self.agy, self.src, self.dst)
 
