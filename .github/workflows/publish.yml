@@ -37,10 +37,8 @@ jobs:
   pypi:
     needs: build
     runs-on: ubuntu-latest
-    # Once the repository is public, create an environment named "pypi" with
-    # required reviewers, name it in the PyPI trusted publisher, and uncomment
-    # this line. GitHub Free offers no environments on private repositories.
-    # environment: pypi
+    # Requires approval from the "pypi" environment's reviewers before upload.
+    environment: pypi
     permissions:
       id-token: write
     steps:
