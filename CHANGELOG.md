@@ -7,18 +7,6 @@ behaviour.
 
 ## [Unreleased]
 
-### Added
-
-- Support for OpenCode: repoints `project.worktree`, `project_directory.directory`,
-  `worktree.directory`, and `session`/`session_v2` `directory`/`path` in `~/.local/share/opencode/opencode.db`
-  (default location follows `XDG_DATA_HOME` when set), so `opencode --continue`/`-c` still finds the old
-  sessions. Unlike the other three agents, OpenCode keeps everything in one SQLite database keyed by a
-  project id that has nothing to do with the path, so nothing on disk needs renaming.
-- An `opencode` process running under the source or destination is now detected the same way Codex and
-  agy are, and stops the move with exit code 2.
-- `~/.local/share/opencode` is now included in the agent-data guard that refuses to move into, out of,
-  or over an agent's own data.
-
 ## [0.1.1] - 2026-09-13
 
 Documentation only; the tool behaves exactly as in 0.1.0.

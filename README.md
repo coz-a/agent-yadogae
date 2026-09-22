@@ -2,18 +2,18 @@ English | [日本語](https://github.com/coz-a/agent-yadogae/blob/main/README.ja
 
 # agent-yadogae
 
-Move a project directory and bring along what Claude Code, Codex CLI, Antigravity CLI and OpenCode
-remember about it, so you can resume your conversations in the new location.
+Move a project directory and bring along what Claude Code, Codex CLI and Antigravity CLI remember about
+it, so you can resume your conversations in the new location.
 
-> **This is an unofficial tool**, not affiliated with Anthropic, OpenAI, Google or the OpenCode project.
-> It relies on the undocumented, unguaranteed storage formats that Claude Code, Codex, Antigravity and
-> OpenCode use internally, and an agent update can break it. It is provided under the MIT license with
-> no warranty. Claude Code, Codex, Antigravity and OpenCode are trademarks of their respective owners.
+> **This is an unofficial tool**, not affiliated with Anthropic, OpenAI or Google. It relies on the
+> undocumented, unguaranteed storage formats that Claude Code, Codex and Antigravity use internally,
+> and an agent update can break it. It is provided under the MIT license with no warranty.
+> Claude Code, Codex and Antigravity are trademarks of their respective owners.
 
 ## Quick start
 
-Close any Claude Code, Codex, agy or OpenCode session in the project first, then run it — no install
-needed with [uv](https://docs.astral.sh/uv/):
+Close any Claude Code, Codex or agy session in the project first, then run it — no install needed with
+[uv](https://docs.astral.sh/uv/):
 
 ```bash
 uvx agent-yadogae ~/workspace/oldname ~/workspace/newname
@@ -31,13 +31,12 @@ It shows what it will do and asks before changing anything:
   no history.jsonl
 == Codex: no ~/.codex; skipped
 == Antigravity: no ~/.gemini/antigravity-cli; skipped
-== OpenCode: no ~/.local/share/opencode; skipped
 
 move /home/you/workspace/oldname -> /home/you/workspace/newname and carry the above? [y/N] y
 [... the same steps, now carried out ...]
 
 moved: /home/you/workspace/oldname -> /home/you/workspace/newname
-open the new directory and run `claude --continue`, `codex resume`, `agy -c` or `opencode --continue` to confirm.
+open the new directory and run `claude --continue`, `codex resume` or `agy -c` to confirm.
 to undo: agent-yadogae /home/you/workspace/newname /home/you/workspace/oldname
 ```
 
@@ -78,14 +77,13 @@ file. Leave any `.agent-yadogae.json` files it created in place (see
 | Claude Code | 2.1.268–2.1.270 | `claude --continue` and the `/resume` list no longer show the sessions |
 | Codex CLI | 0.153.4 | `codex resume` and `--last` no longer show them |
 | Antigravity CLI (`agy`) | 1.2.2 | `agy -c` no longer finds the previous conversation |
-| OpenCode | 2.0.11 | `opencode --continue`/`-c` no longer finds the previous session |
 
 Verified on Linux only. On any other platform it refuses with exit code 1 without changing anything.
 Gemini CLI is not supported.
 
 ## Why you need it
 
-All four agents index conversations by the **absolute path of the directory they ran in**. Claude
+All three agents index conversations by the **absolute path of the directory they ran in**. Claude
 Code, for example, replaces every non-alphanumeric character in the path with `-` and uses the result
 as a folder name under `~/.claude/projects/`, where the transcripts and the auto-memory live (names
 longer than 200 characters are truncated and given a hash suffix).
@@ -114,13 +112,9 @@ It rewrites the records each agent's resume actually reads.
 | `~/.gemini/antigravity-cli/cache/last_conversations.json` | path → conversation ID, **what `agy -c` looks at** |
 | `trustedWorkspaces` in `~/.gemini/antigravity-cli/settings.json` | trusted workspaces |
 | `"workspace"` in `~/.gemini/antigravity-cli/history.jsonl` | prompt history |
-| `project.worktree` in `~/.local/share/opencode/opencode.db` | **what `opencode --continue` looks at** |
-| `project_directory.directory`, `worktree.directory` in the same database | worktree and git-worktree roots |
-| `session.directory`/`.path`, `session_v2.directory`/`.path` in the same database | per-session working directory |
 
 These are the default locations. `CLAUDE_CONFIG_DIR` and `CODEX_HOME` are honoured when set; the agy
-location is always `~/.gemini/antigravity-cli`, and the OpenCode location follows `XDG_DATA_HOME` when
-set (default `~/.local/share`).
+location is always `~/.gemini/antigravity-cli`.
 
 **Sessions started in a subdirectory of the project move with it** — Claude Code worktree history
 folders (`.claude/worktrees/…`) included: `SRC/sub` becomes `DST/sub`. A subdirectory history folder
@@ -130,11 +124,6 @@ with no transcript left, which cannot be tied to the project, is not moved; the 
 For Codex, fixing `threads.cwd` in SQLite is not enough: `codex resume` in the new location only picks
 the session up once the `cwd` inside the rollout files is rewritten too. For agy, rekeying
 `last_conversations.json` is enough for `agy -c` to restore the conversation.
-
-Unlike the other three, **OpenCode keeps everything in one SQLite database**, and its project id has
-nothing to do with the path — moving a project never renames anything under
-`~/.local/share/opencode/` (`shell/`, `snapshot/`, `tool-output/`); only the path-valued columns above
-change.
 
 ## Usage
 
@@ -170,7 +159,7 @@ Paths and platform:
 - the platform is not Linux
 - SRC or DST is a symbolic link, they are the same directory, or one is inside the other
 - SRC or DST contains your home directory, or is inside or contains agent data (`~/.claude`,
-  `~/.claude.json`, `~/.codex`, `~/.gemini`, `~/.local/share/opencode`)
+  `~/.claude.json`, `~/.codex`, `~/.gemini`)
 - SRC is not a directory, DST's parent directory does not exist, or SRC and DST are on **different
   filesystems** (a move there is a copy and a delete that cannot be undone halfway)
 
@@ -196,35 +185,31 @@ Claude Code history:
 
 ### Running sessions
 
-**Close Claude Code, Codex, agy and OpenCode in the project before running it.** A session left open
-keeps writing under the old path, and those later writes stay filed there or clash with the move.
-Claude Code sessions are found by matching the `cwd` in `~/.claude/sessions/*.json` against live PIDs;
-Codex, agy and OpenCode by looking in `/proc` for `codex` / `agy` / `opencode` processes whose working
-directory is under SRC or DST. If one is found, it stops with exit code 2. (An OpenCode background
-service whose own working directory is not under SRC or DST — a global `opencode serve --service`, for
-example — is not caught this way.)
+**Close Claude Code, Codex and agy in the project before running it.** A session left open keeps
+writing under the old path, and those later writes stay filed there or clash with the move. Claude
+Code sessions are found by matching the `cwd` in `~/.claude/sessions/*.json` against live PIDs; Codex
+and agy by looking in `/proc` for `codex` / `agy` processes whose working directory is under SRC or
+DST. If one is found, it stops with exit code 2.
 
 ### Backups and how files are written
 
 Before editing them, it copies `~/.claude.json`, `~/.claude/history.jsonl`, Codex's `config.toml` and
-`state_<n>.sqlite`, agy's JSON and JSONL files, and OpenCode's `opencode.db` to
-`<name>.agent-yadogae-<timestamp>` beside the original. A backup is created readable by the owner only
-and then given the original file's mode. Codex rollout files, which can run to hundreds of megabytes,
-are not backed up.
+`state_<n>.sqlite`, and agy's JSON and JSONL files to `<name>.agent-yadogae-<timestamp>` beside the
+original. A backup is created readable by the owner only and then given the original file's mode.
+Codex rollout files, which can run to hundreds of megabytes, are not backed up.
 
 **Backups are never deleted by the tool**, and each run adds a new set. Once you are happy with a move,
 you can find them with
 
 ```bash
 find ~ -maxdepth 2 -name '*.agent-yadogae-*'; find ~/.gemini/antigravity-cli -name '*.agent-yadogae-*'
-find ~/.local/share/opencode -maxdepth 1 -name '*.agent-yadogae-*'
 ```
 
 and delete the ones you no longer need.
 
-Text files are written to a temporary file and renamed into place, and the Codex and OpenCode databases
-are each updated in a single transaction, so no file is ever left half-written. The migration as a
-whole, however, is a sequence of steps, not one atomic operation.
+Text files are written to a temporary file and renamed into place, and the Codex database is updated in
+a single transaction, so no file is ever left half-written. The migration as a whole, however, is a
+sequence of steps, not one atomic operation.
 
 ### If a step fails
 
@@ -236,8 +221,7 @@ completed are left as they are.
 
 **To undo a move into a new destination, run it the other way round.** The exact command is printed at
 the end of a successful run: `agent-yadogae DST SRC` moves the project and its records back, subject to
-the same checks (the tests check that such a round trip is byte-identical, Codex rollouts and
-OpenCode's database included).
+the same checks (the tests check that such a round trip is byte-identical, Codex rollouts included).
 It is a reverse move, not a snapshot restore, so changes made in between are kept.
 
 Do not use it to undo `--merge`: it would move everything in DST back to SRC, including what was there
@@ -284,21 +268,15 @@ difference from `mv` is the name.
 python3 -m unittest discover -s test -v
 ```
 
-The tests use only a throwaway `HOME`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME` and `XDG_DATA_HOME`, and a fake
-`/proc`; they never touch real agent data and never call an API. If `node` is available, they also run
-the path encoding function taken from Claude Code under node and check that the port gives the same
-results.
+The tests use only a throwaway `HOME`, `CLAUDE_CONFIG_DIR` and `CODEX_HOME` and a fake `/proc`; they
+never touch real agent data and never call an API. If `node` is available, they also run the path
+encoding function taken from Claude Code under node and check that the port gives the same results.
 
 End-to-end verification with the real agents was done on 2026-09-13: sessions containing a marker token
 were created, moved, and then real `claude --continue`, `codex exec resume --last` and `agy -c` in the
 new location restored the token, and Claude Code did so again after moving back. Codex restored nothing
 after a plain `mv`, nor after fixing only `threads.cwd` in SQLite; it did once the `cwd` in the rollouts
 was fixed as well.
-
-OpenCode support was checked by running the rekey logic against a copy of a real, in-use
-`opencode.db` (never the live file) and confirming the queries match its actual schema and that the
-right `worktree`/`directory` columns come out repointed with nothing else disturbed; this has not yet
-been confirmed with a live `opencode --continue` round trip the way the other three agents were.
 
 ## Changelog
 

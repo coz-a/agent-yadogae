@@ -1,32 +1,27 @@
 #!/usr/bin/env python3
 """agent-yadogae -- move a project directory and take its coding-agent history with it.
 
-Claude Code, Codex, the Antigravity CLI (agy) and OpenCode each index what they
-remember about a project by its absolute path. Rename or move the project and
-those keys stop matching: the transcripts, memories and settings are all still
-on disk, but `claude --continue`, `codex resume`, `agy -c` and
-`opencode --continue` no longer find them. `mv` on its own silently orphans them.
+Claude Code, Codex and the Antigravity CLI (agy) each index what they remember
+about a project by its absolute path. Rename or move the project and those keys
+stop matching: the transcripts, memories and settings are all still on disk,
+but `claude --continue`, `codex resume` and `agy -c` no longer find them. `mv`
+on its own silently orphans them.
 
 This moves the directory and repoints what each agent's resume actually reads
-(verified against Claude Code 2.1.268-2.1.270, codex-cli 0.153, agy 1.2 and
-opencode 2.0.11):
+(verified against Claude Code 2.1.268-2.1.270, codex-cli 0.153 and agy 1.2):
 
-  Claude    ~/.claude/projects/<encoded>/          transcripts, subagent logs,
-                                                   tool results, memory/
-            ~/.claude.json  projects[path]         trust, allowed tools, MCP
-            ~/.claude/history.jsonl  "project"     prompt history
-  Codex     ~/.codex/sessions/**/rollout-*.jsonl   the cwd in session_meta and
-                                                   turn_context -- what the
-                                                   `codex resume` filter reads
-            ~/.codex/state_<n>.sqlite              threads.cwd, project_roots.path
-            ~/.codex/config.toml                   [projects."<path>"] trust
-  agy       ~/.gemini/antigravity-cli/cache/last_conversations.json
-            ~/.gemini/antigravity-cli/settings.json    trustedWorkspaces
-            ~/.gemini/antigravity-cli/history.jsonl    "workspace" per prompt
-  OpenCode  ~/.local/share/opencode/opencode.db    project.worktree,
-                                                   project_directory.directory,
-                                                   worktree.directory,
-                                                   session(_v2).directory/path
+  Claude  ~/.claude/projects/<encoded>/          transcripts, subagent logs,
+                                                 tool results, memory/
+          ~/.claude.json  projects[path]         trust, allowed tools, MCP
+          ~/.claude/history.jsonl  "project"     prompt history
+  Codex   ~/.codex/sessions/**/rollout-*.jsonl   the cwd in session_meta and
+                                                 turn_context -- what the
+                                                 `codex resume` filter reads
+          ~/.codex/state_<n>.sqlite              threads.cwd, project_roots.path
+          ~/.codex/config.toml                   [projects."<path>"] trust
+  agy     ~/.gemini/antigravity-cli/cache/last_conversations.json
+          ~/.gemini/antigravity-cli/settings.json    trustedWorkspaces
+          ~/.gemini/antigravity-cli/history.jsonl    "workspace" per prompt
 
 Sessions started in a subdirectory of the project -- Claude Code worktrees
 under .claude/worktrees/ included -- move with it: src/sub becomes dst/sub.
@@ -42,9 +37,8 @@ ones are backed up first. Codex rollouts are not backed up -- they run to
 hundreds of megabytes -- but only their cwd changes, and running the tool in
 the other direction puts it back.
 
-Unofficial: not affiliated with Anthropic, OpenAI, Google or the OpenCode
-project. It relies on undocumented storage formats that can change without
-notice.
+Unofficial: not affiliated with Anthropic, OpenAI or Google. It relies on
+undocumented storage formats that can change without notice.
 
 No dependencies beyond the standard library.
 """
@@ -450,15 +444,14 @@ def live_sessions(sessions_dir: Path, roots: list[str]) -> list[dict]:
     return live
 
 
-# Codex, agy and OpenCode keep no session registry to consult, so a running
-# one is found by its process: an agent binary whose working directory is
-# inside a root.
+# Codex and agy keep no session registry to consult, so a running one is found
+# by its process: an agent binary whose working directory is inside a root.
 PROC_ROOT = Path("/proc")
-AGENT_BINARIES = {"codex": "Codex", "agy": "Antigravity", "opencode": "OpenCode"}
+AGENT_BINARIES = {"codex": "Codex", "agy": "Antigravity"}
 
 
 def live_agent_processes(roots: list[str], proc: Path | None = None) -> list[tuple[int, str]]:
-    """(pid, agent) for Codex, agy and OpenCode processes running inside any of roots."""
+    """(pid, agent) for Codex and agy processes running inside any of roots."""
     proc = proc or PROC_ROOT
     live = []
     if not proc.is_dir():
@@ -909,108 +902,6 @@ def carry_antigravity(r: Runner, home: Path, src: str, dst: str) -> None:
     r.step("agy history.jsonl", rewrite_jsonl_field, home / "history.jsonl", "workspace", src, dst)
 
 
-# --- OpenCode ------------------------------------------------------------------
-#
-# Unlike the other three, OpenCode keeps everything in one SQLite database,
-# opencode.db, and its project id has nothing to do with the path -- it is
-# not the Claude Code style folder name that needs renaming, only the
-# path-valued columns that name each project, worktree and session.
-
-def opencode_home() -> Path:
-    return Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share") / "opencode"
-
-
-def _rebase_project_rows(rows: list[tuple[str, str]], src: str, dst: str) -> list[tuple[str, str]]:
-    """(id, new worktree) for rows to update; a worktree another project
-    already has keeps its row as is, the same as an existing entry does in
-    ~/.claude.json or last_conversations.json."""
-    owned = {worktree for _, worktree in rows}
-    claimed: set[str] = set()
-    plan = []
-    for pid, worktree in rows:
-        new = rebase(worktree, src, dst)
-        if new is None or new == worktree or new in owned or new in claimed:
-            continue
-        claimed.add(new)
-        plan.append((pid, new))
-    return plan
-
-
-def _rebase_directory_rows(rows: list[tuple[int, str, str]], src: str, dst: str) -> list[tuple[int, str]]:
-    """rows: (rowid, project_id, directory). Returns (rowid, new directory)
-    to update in place -- updating by rowid, rather than a delete-and-insert
-    keyed on (project_id, directory), carries every other column (including
-    NOT NULL ones this tool has never seen) without having to name them. A
-    directory the project already has a row for keeps the old row, the same
-    collision rule as _rebase_project_rows."""
-    owned = {(pid, d) for _, pid, d in rows}
-    claimed: set[tuple[str, str]] = set()
-    plan = []
-    for rowid, pid, directory in rows:
-        new = rebase(directory, src, dst)
-        if new is None or new == directory or (pid, new) in owned or (pid, new) in claimed:
-            continue
-        claimed.add((pid, new))
-        plan.append((rowid, new))
-    return plan
-
-
-def _rebase_session_rows(rows: list[tuple[str, str, str | None]], src: str, dst: str) -> list[tuple]:
-    """(id, new directory, new path) for session/session_v2 rows to update."""
-    plan = []
-    for sid, directory, path in rows:
-        new_dir = rebase(directory, src, dst)
-        new_path = rebase(path, src, dst) if isinstance(path, str) else None
-        if new_dir is None and new_path is None:
-            continue
-        plan.append((sid, new_dir if new_dir is not None else directory, new_path if new_path is not None else path))
-    return plan
-
-
-def rekey_opencode_db(r: Runner, db: Path, src: str, dst: str) -> None:
-    con = sqlite3.connect(str(db), timeout=10)
-    try:
-        project_plan = _rebase_project_rows(con.execute("SELECT id, worktree FROM project").fetchall(), src, dst)
-        pd_plan = _rebase_directory_rows(
-            con.execute("SELECT rowid, project_id, directory FROM project_directory").fetchall(), src, dst)
-        wt_plan = _rebase_directory_rows(
-            con.execute("SELECT rowid, project_id, directory FROM worktree").fetchall(), src, dst)
-        ses_plan = _rebase_session_rows(con.execute("SELECT id, directory, path FROM session").fetchall(), src, dst)
-        ses2_plan = _rebase_session_rows(
-            con.execute("SELECT id, directory, path FROM session_v2").fetchall(), src, dst)
-
-        total = len(project_plan) + len(pd_plan) + len(wt_plan) + len(ses_plan) + len(ses2_plan)
-        if not total:
-            r.say(f"  no OpenCode project for {src}")
-            return
-        r.backup_sqlite(con, db)
-        if r.act(f"repoint {total} OpenCode project/session record(s) in opencode.db"):
-            with con:
-                con.executemany("UPDATE project SET worktree = ? WHERE id = ?",
-                                 [(new, pid) for pid, new in project_plan])
-                con.executemany("UPDATE project_directory SET directory = ? WHERE rowid = ?",
-                                 [(new, rowid) for rowid, new in pd_plan])
-                con.executemany("UPDATE worktree SET directory = ? WHERE rowid = ?",
-                                 [(new, rowid) for rowid, new in wt_plan])
-                for table, plan in (("session", ses_plan), ("session_v2", ses2_plan)):
-                    con.executemany(f"UPDATE {table} SET directory = ?, path = ? WHERE id = ?",
-                                     [(d, p, sid) for sid, d, p in plan])
-    finally:
-        con.close()
-
-
-def carry_opencode(r: Runner, home: Path, src: str, dst: str) -> None:
-    if not home.is_dir():
-        r.say("== OpenCode: no ~/.local/share/opencode; skipped")
-        return
-    db = home / "opencode.db"
-    if not db.exists():
-        r.say("== OpenCode: no opencode.db; skipped")
-        return
-    r.say("== OpenCode")
-    r.step("OpenCode opencode.db", rekey_opencode_db, db, src, dst)
-
-
 # --- preconditions --------------------------------------------------------------
 #
 # Everything that can refuse runs before the first change, so a refusal always
@@ -1050,12 +941,11 @@ class Plan:
         self.home = claude_home()
         self.codex = codex_home()
         self.agy = agy_home()
-        self.opencode = opencode_home()
         user_home = str(Path.home().resolve())
         for label, path in (("source", src), ("destination", dst)):
             if is_within(user_home, path):
                 raise Refused(f"the {label} {path} contains the home directory {user_home}")
-        for data_dir in (self.home, config_path(self.home), self.codex, self.agy.parent, self.opencode):
+        for data_dir in (self.home, config_path(self.home), self.codex, self.agy.parent):
             d = str(data_dir.resolve())
             if any(is_within(a, b) for a, b in ((d, src), (src, d), (d, dst), (dst, d))):
                 raise Refused(f"refusing to move into, out of or over the agent data at {d}")
@@ -1116,7 +1006,6 @@ class Plan:
         carry_claude(r, self.home, self.index_moves, self.left_behind, self.src, self.dst)
         carry_codex(r, self.codex, self.src, self.dst)
         carry_antigravity(r, self.agy, self.src, self.dst)
-        carry_opencode(r, self.opencode, self.src, self.dst)
 
 
 def report_problems(plan: Plan, r: Runner) -> None:
@@ -1142,8 +1031,8 @@ def report_problems(plan: Plan, r: Runner) -> None:
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         prog="agent-yadogae",
-        description="Move a project directory and take its Claude Code, Codex, agy and OpenCode history with it.",
-        epilog="Close every Claude Code, Codex, agy and OpenCode session in the project first. "
+        description="Move a project directory and take its Claude Code, Codex and agy history with it.",
+        epilog="Close every Claude Code, Codex and agy session in the project first. "
                "Unofficial; relies on undocumented storage formats.",
     )
     p.add_argument("src", help="the project directory as it is now")
@@ -1214,8 +1103,7 @@ def main(argv: list[str] | None = None) -> int:
         report_problems(plan, r)
         return 1
     r.say(f"\nmoved: {plan.src} -> {plan.dst}")
-    r.say("open the new directory and run `claude --continue`, `codex resume`, `agy -c` or "
-          "`opencode --continue` to confirm.")
+    r.say("open the new directory and run `claude --continue`, `codex resume` or `agy -c` to confirm.")
     r.say(f"to undo: agent-yadogae {shlex.quote(plan.dst)} {shlex.quote(plan.src)}")
     return 0
 

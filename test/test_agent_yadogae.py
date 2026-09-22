@@ -69,20 +69,18 @@ def compact(obj) -> str:
 class Fixture(unittest.TestCase):
     """A fake home with one project that has history, memory and settings."""
 
-    ENV = ("CLAUDE_CONFIG_DIR", "CODEX_HOME", "XDG_DATA_HOME", "HOME")
+    ENV = ("CLAUDE_CONFIG_DIR", "CODEX_HOME", "HOME")
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         root = self.root = Path(self.tmp.name).resolve()
-        # HOME, CODEX_HOME and XDG_DATA_HOME too: the Codex, agy and OpenCode
-        # carriers run on every migration, and must never see the real
-        # ~/.codex, ~/.gemini or ~/.local/share/opencode.
+        # HOME and CODEX_HOME too: the Codex and agy carriers run on every
+        # migration, and must never see the real ~/.codex or ~/.gemini.
         saved = {k: os.environ.get(k) for k in self.ENV}
         self.addCleanup(self._restore_env, saved)
         os.environ["HOME"] = str(root)
         os.environ["CODEX_HOME"] = str(root / ".codex")
-        os.environ["XDG_DATA_HOME"] = str(root / ".local" / "share")
         (root / "proc").mkdir()
         for patch in (
             mock.patch.object(ay, "PROC_ROOT", root / "proc"),
@@ -538,11 +536,6 @@ class TestGuards(Fixture):
         code = self.run_cli(argv=[str(self.src), str(self.root / ".codex" / "proj"), "--yes"])
         self.assertRefusedUntouched(code, "agent data")
 
-    def test_moving_into_opencode_data_is_refused(self):
-        code = self.run_cli(
-            argv=[str(self.src), str(self.root / ".local" / "share" / "opencode" / "proj"), "--yes"])
-        self.assertRefusedUntouched(code, "agent data")
-
     def test_a_move_across_filesystems_is_refused(self):
         with mock.patch.object(ay, "same_filesystem", lambda a, b: False):
             self.assertRefusedUntouched(self.run_cli(), "--state-only")
@@ -898,127 +891,7 @@ class TestAntigravity(AgyFixture):
         self.assertEqual([p.read_bytes() for p in (self.last, self.settings, self.agy_history)], before)
 
 
-class OpencodeFixture(Fixture):
-    """A fake ~/.local/share/opencode of the shape opencode v2.0.11 writes."""
-
-    def setUp(self):
-        super().setUp()
-        self.opencode = self.root / ".local" / "share" / "opencode"
-        self.opencode.mkdir(parents=True)
-        self.oc_db = self.opencode / "opencode.db"
-        con = sqlite3.connect(str(self.oc_db))
-        con.executescript("""
-            CREATE TABLE project (id TEXT PRIMARY KEY, worktree TEXT NOT NULL);
-            CREATE TABLE project_directory (project_id TEXT NOT NULL, directory TEXT NOT NULL,
-                                             type TEXT, strategy TEXT,
-                                             PRIMARY KEY (project_id, directory));
-            CREATE TABLE worktree (project_id TEXT NOT NULL, directory TEXT NOT NULL, strategy TEXT,
-                                   PRIMARY KEY (project_id, directory));
-            CREATE TABLE session (id TEXT PRIMARY KEY, project_id TEXT NOT NULL,
-                                   directory TEXT NOT NULL, path TEXT);
-            CREATE TABLE session_v2 (id TEXT PRIMARY KEY, project_id TEXT NOT NULL,
-                                      directory TEXT NOT NULL, path TEXT);
-        """)
-        self.tree = str(self.src / ".claude" / "worktrees" / "wt")
-        con.executemany("INSERT INTO project VALUES (?, ?)", [
-            ("p1", str(self.src)),
-            ("other", "/somewhere/else"),
-        ])
-        con.executemany("INSERT INTO project_directory VALUES (?, ?, ?, ?)", [
-            ("p1", str(self.src), None, None),
-            ("p1", self.tree, None, "git_worktree"),
-            ("other", "/somewhere/else", None, None),
-        ])
-        con.executemany("INSERT INTO worktree VALUES (?, ?, ?)", [
-            ("p1", str(self.src), None),
-            ("other", "/somewhere/else", None),
-        ])
-        con.executemany("INSERT INTO session VALUES (?, ?, ?, ?)", [
-            ("ses1", "p1", str(self.src), ""),
-            ("ses2", "other", "/somewhere/else", ""),
-        ])
-        con.executemany("INSERT INTO session_v2 VALUES (?, ?, ?, ?)", [
-            ("ses1v2", "p1", str(self.src / "sub"), ""),
-            ("ses2v2", "other", "/somewhere/else", ""),
-        ])
-        con.commit()
-        con.close()
-
-    def rows(self, table: str, db: Path | None = None) -> list:
-        con = sqlite3.connect(str(db or self.oc_db))
-        try:
-            return sorted(con.execute(f"SELECT * FROM {table}"))
-        finally:
-            con.close()
-
-
-class TestOpencode(OpencodeFixture):
-    def test_the_project_worktree_follows_the_move(self):
-        self.assertEqual(self.run_cli(), 0, self.err)
-        self.assertEqual(dict(self.rows("project")), {"p1": str(self.dst), "other": "/somewhere/else"})
-
-    def test_project_directory_and_worktree_follow_including_subdirectories(self):
-        self.run_cli()
-        new_tree = str(self.dst) + self.tree[len(str(self.src)):]
-        self.assertEqual(
-            {(pid, d) for pid, d, *_ in self.rows("project_directory")},
-            {("p1", str(self.dst)), ("p1", new_tree), ("other", "/somewhere/else")},
-        )
-        self.assertEqual(
-            {(pid, d) for pid, d, *_ in self.rows("worktree")},
-            {("p1", str(self.dst)), ("other", "/somewhere/else")},
-        )
-
-    def test_session_and_session_v2_directory_follow_including_subdirectories(self):
-        self.run_cli()
-        self.assertEqual(dict((i, d) for i, _, d, _ in self.rows("session")),
-                         {"ses1": str(self.dst), "ses2": "/somewhere/else"})
-        self.assertEqual(dict((i, d) for i, _, d, _ in self.rows("session_v2")),
-                         {"ses1v2": str(self.dst / "sub"), "ses2v2": "/somewhere/else"})
-
-    def test_an_existing_project_at_the_destination_is_kept(self):
-        con = sqlite3.connect(str(self.oc_db))
-        con.execute("INSERT INTO project VALUES ('p2', ?)", (str(self.dst),))
-        con.commit()
-        con.close()
-        self.assertEqual(self.run_cli(), 0, self.err)
-        self.assertEqual(dict(self.rows("project")),
-                         {"p1": str(self.src), "p2": str(self.dst), "other": "/somewhere/else"})
-
-    def test_an_existing_project_directory_at_the_destination_is_kept(self):
-        con = sqlite3.connect(str(self.oc_db))
-        con.execute("INSERT INTO project_directory VALUES ('p1', ?, NULL, NULL)", (str(self.dst),))
-        con.commit()
-        con.close()
-        self.run_cli()
-        self.assertIn(("p1", str(self.src)), [(pid, d) for pid, d, *_ in self.rows("project_directory")])
-
-    def test_no_opencode_project_is_a_noop(self):
-        con = sqlite3.connect(str(self.oc_db))
-        con.execute("DELETE FROM project WHERE id = 'p1'")
-        con.execute("DELETE FROM project_directory WHERE project_id = 'p1'")
-        con.execute("DELETE FROM worktree WHERE project_id = 'p1'")
-        con.execute("DELETE FROM session WHERE project_id = 'p1'")
-        con.execute("DELETE FROM session_v2 WHERE project_id = 'p1'")
-        con.commit()
-        con.close()
-        self.assertEqual(self.run_cli(), 0, self.err)
-        self.assertEqual(list(self.opencode.glob("opencode.db.agent-yadogae-*")), [])
-
-    def test_the_database_is_backed_up_before_it_is_edited(self):
-        self.run_cli()
-        backups = list(self.opencode.glob("opencode.db.agent-yadogae-*"))
-        self.assertEqual(len(backups), 1)
-        self.assertEqual(dict(self.rows("project", backups[0]))["p1"], str(self.src))
-
-    def test_dry_run_changes_nothing(self):
-        before = self.oc_db.read_bytes()
-        self.assertEqual(self.run_cli("--dry-run"), 0, self.err)
-        self.assertEqual(self.oc_db.read_bytes(), before)
-        self.assertEqual(list(self.opencode.glob("opencode.db.agent-yadogae-*")), [])
-
-
-class TestRoundTrip(CodexFixture, AgyFixture, OpencodeFixture):
+class TestRoundTrip(CodexFixture, AgyFixture):
     """Moving back is the undo, so it has to restore every store exactly."""
 
     def snapshot(self) -> dict:
@@ -1029,11 +902,9 @@ class TestRoundTrip(CodexFixture, AgyFixture, OpencodeFixture):
                 continue
             if f.is_dir():
                 out[rel + "/"] = None
-            elif f.suffix in (".sqlite", ".db"):
+            elif f.suffix == ".sqlite":
                 con = sqlite3.connect(str(f))
-                tables = [n for (n,) in con.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
-                out[rel] = {t: sorted(con.execute(f"SELECT * FROM {t}")) for t in tables}
+                out[rel] = [sorted(con.execute(f"SELECT * FROM {t}")) for t in ("threads", "project_roots")]
                 con.close()
             else:
                 out[rel] = f.read_bytes()
@@ -1069,12 +940,6 @@ class TestLiveAgentProcesses(Fixture):
         self.fake_process(2, self.dst, "/home/u/.local/bin/agy", ["agy"])
         self.assertEqual(ay.live_agent_processes([str(self.src), str(self.dst)]),
                          [(1, "Codex"), (2, "Antigravity")])
-
-    def test_an_opencode_process_inside_the_project_stops_the_move(self):
-        (self.src / "sub").mkdir()
-        self.fake_process(3, self.src / "sub", "/home/u/.opencode/bin/opencode", ["opencode", "--auto"])
-        self.assertEqual(self.run_cli(), 2)
-        self.assertTrue(self.src.is_dir())
 
     def test_unrelated_processes_do_not_count(self):
         self.fake_process(1, self.src, "/usr/bin/vim", ["vim"])

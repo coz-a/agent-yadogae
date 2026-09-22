@@ -2,17 +2,17 @@
 
 # agent-yadogae
 
-プロジェクトのディレクトリを移動し、Claude Code・Codex CLI・Antigravity CLI・OpenCode がそのプロジェクト
-について残した記録を一緒に連れていきます。移動先でもそのまま会話を再開できます。
+プロジェクトのディレクトリを移動し、Claude Code・Codex CLI・Antigravity CLI がそのプロジェクトについて
+残した記録を一緒に連れていきます。移動先でもそのまま会話を再開できます。
 
-> **非公式ツールです。** Anthropic・OpenAI・Google・OpenCode プロジェクトとは関係がありません。
-> Claude Code・Codex・Antigravity・OpenCode がそれぞれ内部で使っている、公開も保証もされていない保存形式
-> に依存しており、エージェントの更新で動かなくなることがあります。MIT ライセンスのもと無保証で提供します。
-> Claude Code・Codex・Antigravity・OpenCode は各社の商標です。
+> **非公式ツールです。** Anthropic・OpenAI・Google とは関係がありません。Claude Code・Codex・Antigravity
+> がそれぞれ内部で使っている、公開も保証もされていない保存形式に依存しており、エージェントの更新で
+> 動かなくなることがあります。MIT ライセンスのもと無保証で提供します。Claude Code・Codex・Antigravity
+> は各社の商標です。
 
 ## クイックスタート
 
-そのプロジェクトで開いている Claude Code・Codex・agy・OpenCode のセッションを閉じてから実行します。
+そのプロジェクトで開いている Claude Code・Codex・agy のセッションを閉じてから実行します。
 [uv](https://docs.astral.sh/uv/) があればインストール不要です。
 
 ```bash
@@ -31,13 +31,12 @@ uvx agent-yadogae ~/workspace/oldname ~/workspace/newname
   no history.jsonl
 == Codex: no ~/.codex; skipped
 == Antigravity: no ~/.gemini/antigravity-cli; skipped
-== OpenCode: no ~/.local/share/opencode; skipped
 
 move /home/you/workspace/oldname -> /home/you/workspace/newname and carry the above? [y/N] y
 [... 同じ手順が実際に実行されます ...]
 
 moved: /home/you/workspace/oldname -> /home/you/workspace/newname
-open the new directory and run `claude --continue`, `codex resume`, `agy -c` or `opencode --continue` to confirm.
+open the new directory and run `claude --continue`, `codex resume` or `agy -c` to confirm.
 to undo: agent-yadogae /home/you/workspace/newname /home/you/workspace/oldname
 ```
 
@@ -78,13 +77,12 @@ curl -fsSL https://raw.githubusercontent.com/coz-a/agent-yadogae/main/agent_yado
 | Claude Code | 2.1.268〜2.1.270 | `claude --continue` と `/resume` の一覧に出ない |
 | Codex CLI | 0.153.4 | `codex resume` の一覧と `--last` に出ない |
 | Antigravity CLI (`agy`) | 1.2.2 | `agy -c` が前の会話を見つけられない |
-| OpenCode | 2.0.11 | `opencode --continue`/`-c` が前のセッションを見つけられない |
 
 Linux でのみ検証しています。Linux 以外では何も変更せず、終了コード 1 で拒否します。Gemini CLI は対象外です。
 
 ## なぜ要るのか
 
-4つのエージェントはどれも、会話を**実行したディレクトリの絶対パス**で索引しています。たとえば
+3つのエージェントはどれも、会話を**実行したディレクトリの絶対パス**で索引しています。たとえば
 Claude Code はパスの英数字以外をすべて `-` に置換した名前のフォルダを `~/.claude/projects/` に作り、
 transcript も自動メモリもそこに入れます（200文字を超える名前は切り詰めてハッシュを付けます）。
 
@@ -112,13 +110,9 @@ transcript も自動メモリもそこに入れます（200文字を超える名
 | `~/.gemini/antigravity-cli/cache/last_conversations.json` | パス → 会話 ID。**`agy -c` が見ているのはここ** |
 | `~/.gemini/antigravity-cli/settings.json` の `trustedWorkspaces` | 信頼済みワークスペース |
 | `~/.gemini/antigravity-cli/history.jsonl` の `"workspace"` | プロンプト履歴 |
-| `~/.local/share/opencode/opencode.db` の `project.worktree` | **`opencode --continue` が見ているのはここ** |
-| 同じデータベースの `project_directory.directory`、`worktree.directory` | worktree・git-worktree のルート |
-| 同じデータベースの `session.directory`/`.path`、`session_v2.directory`/`.path` | セッションごとの作業ディレクトリ |
 
 上の場所は既定値です。`CLAUDE_CONFIG_DIR` と `CODEX_HOME` が設定されていればそちらを使います。agy の
-保存先は常に `~/.gemini/antigravity-cli` で、OpenCode の保存先は設定されていれば `XDG_DATA_HOME`
-（既定は `~/.local/share`）に従います。
+保存先は常に `~/.gemini/antigravity-cli` です。
 
 プロジェクトの**サブディレクトリで始めたセッションも一緒に移ります**。Claude Code の worktree
 （`.claude/worktrees/…`）の履歴フォルダも含め、`SRC/sub` は `DST/sub` になります。ただしサブディレクトリの
@@ -128,10 +122,6 @@ transcript も自動メモリもそこに入れます（200文字を超える名
 Codex は SQLite の `threads.cwd` を直すだけでは戻らず、rollout 側の `cwd` まで書き換えて初めて移動先の
 `codex resume` がセッションを拾います。agy は `last_conversations.json` のキーを付け替えれば `agy -c` が
 会話を復元します。
-
-他の3つと違い、**OpenCode はすべてを1つの SQLite データベースにまとめて**おり、プロジェクト ID はパスと
-無関係です。そのため `~/.local/share/opencode/` の下（`shell/`、`snapshot/`、`tool-output/`）は移動しても
-何もリネームされず、変わるのは上記のパス値カラムだけです。
 
 ## 使い方
 
@@ -166,7 +156,7 @@ agent-yadogae SRC DST [-n] [-y] [--state-only] [--merge] [--ignore-running] [-q]
 - Linux 以外
 - SRC か DST がシンボリックリンク、SRC と DST が同じディレクトリ、または一方がもう一方の中にある
 - SRC か DST がホームディレクトリを含む、またはエージェントのデータ（`~/.claude`、`~/.claude.json`、
-  `~/.codex`、`~/.gemini`、`~/.local/share/opencode`）の中にある・それを含む
+  `~/.codex`、`~/.gemini`）の中にある・それを含む
 - SRC がディレクトリでない、DST の親ディレクトリが無い、または SRC と DST が**別のファイルシステム**にある
   （移動がコピーと削除になり、途中で止まると戻せないため）
 
@@ -189,31 +179,28 @@ Claude Code の履歴:
 
 ### 動いているセッション
 
-**そのプロジェクトで Claude Code・Codex・agy・OpenCode を閉じてから実行してください。** 開いたままだと
-セッションは古いパスの下に書き込み続け、その書き込みは古いパスに残ったり、移動と競合したりします。
-Claude Code は `~/.claude/sessions/*.json` の `cwd` と生存 PID を突き合わせ、Codex・agy・OpenCode は
-`/proc` から作業ディレクトリが SRC か DST の下にある `codex` / `agy` / `opencode` プロセスを探します。
-見つかれば終了コード 2 で止まります（`opencode serve --service` のような、作業ディレクトリが SRC・DST の
-下にないグローバルな OpenCode のバックグラウンドサービスはこの方法では検出できません）。
+**そのプロジェクトで Claude Code・Codex・agy を閉じてから実行してください。** 開いたままだとセッションは
+古いパスの下に書き込み続け、その書き込みは古いパスに残ったり、移動と競合したりします。Claude Code は
+`~/.claude/sessions/*.json` の `cwd` と生存 PID を突き合わせ、Codex と agy は `/proc` から作業ディレクトリが
+SRC か DST の下にある `codex` / `agy` プロセスを探します。見つかれば終了コード 2 で止まります。
 
 ### バックアップとファイルの書き込み
 
 `~/.claude.json`、`~/.claude/history.jsonl`、Codex の `config.toml` と `state_<n>.sqlite`、agy の JSON と
-JSONL、OpenCode の `opencode.db` は、編集する前に元のファイルと同じ場所へ `<name>.agent-yadogae-<timestamp>`
-として複製します。バックアップは所有者だけが読める状態で作成し、その後で元のファイルと同じ権限にします。
-数百MBになり得る Codex の rollout ファイルはバックアップしません。
+JSONL は、編集する前に元のファイルと同じ場所へ `<name>.agent-yadogae-<timestamp>` として複製します。
+バックアップは所有者だけが読める状態で作成し、その後で元のファイルと同じ権限にします。数百MBになり得る
+Codex の rollout ファイルはバックアップしません。
 
 **バックアップをツールが削除することはなく**、実行するたびに新しい組が増えます。移動の結果に問題が
 なければ、次のコマンドで探して不要なものを削除してください。
 
 ```bash
 find ~ -maxdepth 2 -name '*.agent-yadogae-*'; find ~/.gemini/antigravity-cli -name '*.agent-yadogae-*'
-find ~/.local/share/opencode -maxdepth 1 -name '*.agent-yadogae-*'
 ```
 
-テキストファイルは一時ファイルに書いてから置き換え、Codex と OpenCode のデータベースはそれぞれ1つの
-トランザクションで更新するので、書きかけのファイルが残ることはありません。ただし移行全体は複数の手順の
-組み合わせで、1回の不可分な操作ではありません。
+テキストファイルは一時ファイルに書いてから置き換え、Codex のデータベースは1つのトランザクションで更新する
+ので、書きかけのファイルが残ることはありません。ただし移行全体は複数の手順の組み合わせで、1回の不可分な
+操作ではありません。
 
 ### 途中で失敗したとき
 
@@ -223,9 +210,9 @@ find ~/.local/share/opencode -maxdepth 1 -name '*.agent-yadogae-*'
 ### 元に戻す
 
 **新しい移動先への移動は、逆向きに実行すれば元に戻せます。** 正確なコマンドは成功時の最後に表示されます。
-`agent-yadogae DST SRC` はプロジェクトと記録を元の場所へ移し、通常と同じ検査を行います（Codex の rollout や
-OpenCode のデータベースも含め、往復後にバイト単位で一致することをテストで確認しています）。
-スナップショットからの復元ではなく逆向きの移動なので、その間に行った変更は残ります。
+`agent-yadogae DST SRC` はプロジェクトと記録を元の場所へ移し、通常と同じ検査を行います（Codex の rollout を
+含め、往復後にバイト単位で一致することをテストで確認しています）。スナップショットからの復元ではなく
+逆向きの移動なので、その間に行った変更は残ります。
 
 `--merge` を戻す用途には使わないでください。DST にあるものを、合流前からあったものも含めて SRC へ移します。
 
@@ -268,19 +255,14 @@ worktree 側の名前で保存されるためです）。
 python3 -m unittest discover -s test -v
 ```
 
-テストは使い捨ての `HOME`・`CLAUDE_CONFIG_DIR`・`CODEX_HOME`・`XDG_DATA_HOME` と偽の `/proc` だけを使い、
-実際のエージェントのデータには触れず、API も呼びません。`node` があれば、Claude Code から取り出した
-パス変換関数を node で実行し、移植版と結果が一致することも確かめます。
+テストは使い捨ての `HOME`・`CLAUDE_CONFIG_DIR`・`CODEX_HOME` と偽の `/proc` だけを使い、実際のエージェントの
+データには触れず、API も呼びません。`node` があれば、Claude Code から取り出したパス変換関数を node で
+実行し、移植版と結果が一致することも確かめます。
 
 実際のエージェントでの end-to-end 確認は 2026-09-13 に実施しています。目印のトークンを含むセッションを作り、
 移動後に移動先で本物の `claude --continue`・`codex exec resume --last`・`agy -c` がトークンを復元すること、
 逆向きに戻した後も Claude Code が復元することを確認しました。Codex は `mv` だけでも、SQLite の
 `threads.cwd` を直すだけでも復元できず、rollout の `cwd` まで直すと復元しました。
-
-OpenCode の対応は、実際に使われている `opencode.db` のコピー（本物のファイルは一切変更していません）に
-対して付け替えロジックを実行し、クエリが実際のスキーマと合っていること、`worktree`/`directory` の
-各カラムだけが正しく付け替わり他は変わらないことを確認する形で検証しました。他の3エージェントのような、
-実際の `opencode --continue` を使った往復での確認はまだ行っていません。
 
 ## 変更履歴
 
